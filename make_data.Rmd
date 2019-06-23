@@ -1,0 +1,166 @@
+---
+title: "Data"
+output:
+  html_document:
+    theme: cosmo
+    toc: yes
+  pdf_document:
+    toc: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+<!--
+IMAGES:
+Insert them with: ![alt text](image.png)
+You can also resize them if needed: convert image.png -resize 50% image.png
+If you want to center the image, go through HTML code:
+<div style="text-align:center"><img src ="image.png"/></div>
+
+REFERENCES:
+For references: Put all the bibTeX references in the file "references.bib"
+in the current folder and cite the references as @key or [@key] in the text.
+Uncomment the bibliography field in the above header and put a "References"
+title wherever you want to display the reference list.
+-->
+
+```{r general options, include = FALSE}
+knitr::knit_hooks$set(margin = function(before, options, envir) {
+  if (before) par(mgp = c(1.5, .5, 0), bty = "n", plt = c(.105, .97, .13, .97))
+  else NULL
+})
+
+knitr::opts_chunk$set(margin = TRUE, prompt = FALSE, comment = "##", eval = FALSE,
+                      collapse = FALSE, cache = FALSE, autodep = TRUE,
+                      dev.args = list(pointsize = 11), fig.height = 3.5,
+                      fig.width = 4.24725, fig.retina = 2, fig.align = "center")
+
+l <- "en_US.UTF-8"
+Sys.setenv(LANGAGE = l)
+Sys.setlocale(locale = l)
+Sys.setlocale("LC_MESSAGES", l)
+
+# cleaning the packages space:
+search_path <- search()
+pkgs <- c("stats", "graphics", "grDevices", "utils", "datasets", "methods", "base")
+tdet <- grep("package", search_path[!(search_path %in% paste0("package:", pkgs))],
+             value = TRUE)
+for(i in tdet) detach(i, unload = TRUE, character.only = TRUE)
+
+rm(list = ls())
+```
+
+The website [TuTiempo.net](https://en.tutiempo.net) contains meteorological and
+climatic data from many climatic stations around the world. Here we download all
+the **daily** data from the climatic station of Vientiane from 2010 to today.
+For that we need a number of utilitary functions that we start by defining.
+
+The following function removes the last 2 lines of a matrix `m`:
+
+```{r}
+rm_summaries <- function(m) {
+  n <- nrow(m)
+  m[-((n - 1):n), ]
+}
+```
+
+The following function coerces a matrix `m` to a data frame using the first line
+for the variable names:
+
+```{r}
+as.data.frame2 <- function(m) {
+  setNames(as.data.frame(m, as.is = TRUE), m[1, ])[-1, ]
+}
+```
+
+The following function downloads data from the URL `url` and organizes it into a
+data frame:
+
+```{r}
+get_page <- function(url) {
+  require(magrittr) # for the " %>% " operator
+  print(url)
+  url %>%
+    xml2::read_html() %>%
+    rvest::html_nodes(".mensuales td , th") %>%
+    rvest::html_text() %>%
+    matrix(ncol = 15, byrow = TRUE) %>%
+    rm_summaries() %>%
+    as.data.frame2()
+}
+```
+
+A safe version of the `get_page()` function, trying the URL again and again if
+internet is interrupted and handling specific errors (e.g. 404):
+
+```{r}
+safe_get_page <- function(..., error) {
+  repeat {
+    out <- purrr::safely(get_page)(...)
+    if(is.null(out$error) || grepl(error, out$error)) return(out)
+  }
+}
+```
+
+The following function pads 1-digit numbers to 2-digit ones with zeros on the
+left:
+
+```{r}
+pad <- function(x) {
+  stringr::str_pad(as.character(x), 2, pad = "0")
+}
+```
+
+The following function builds an URL from a year, a month and a station:
+
+```{r}
+make_url <- function(year, month, station) {
+  paste0("http://en.tutiempo.net/climate/",
+         pad(month), "-", year, "/ws-", station, ".html")
+}
+```
+
+Here is the main function that downloads the data for the station station:
+
+```{r}
+download_data <- function(station, years, months = 1:12, error = "HTTP error 404") {
+  require(magrittr) # for the " %>% " operator
+  require(zeallot) # for the " %<-% " operator
+  c(months, years) %<-% expand.grid(months, years)
+  out <- purrr::map2(years, months, make_url, station = station) %>%
+    purrr::map(safe_get_page, error = error) %>%
+    purrr::transpose()
+  out <- out$result %>%
+    setNames(paste(years, pad(months), sep = "-")) %>%
+    `[`(sapply(out$error, is.null)) %>%
+    dplyr::bind_rows(.id = "ym") %>%
+    dplyr::mutate(day = lubridate::ymd(paste(ym, pad(Day), sep = "-"))) %>%
+    dplyr::select(-ym, -Day) %>%
+    dplyr::select(day, dplyr::everything()) %>%
+    dplyr::mutate_if(is.factor, as.character) %>%
+    dplyr::mutate_at(dplyr::vars(T, TM, Tm, SLP, PP, VV, V, VM, VG), as.numeric) %>%
+    dplyr::mutate_at(dplyr::vars(H), as.integer) %>%
+    dplyr::mutate_at(dplyr::vars(RA, SN, TS, FG), function(x) x == "o")
+  names(out) %<>%
+    sub("^T$", "ta", .) %>%
+    sub("TM", "tx", .) %>%
+    sub("Tm", "tn", .) %>%
+    tolower()
+  out
+}
+```
+
+Downloading the data:
+
+```{r}
+a <- download_data(489400, 2010:2018, months = 1:12, error = "HTTP error 404")
+b <- download_data(489400, 2019, months = 1:5, error = "HTTP error 404")
+```
+
+Writing to disk:
+
+```{r eval = FALSE, include = FALSE}
+if (!dir.exists("data")) dir.create("data")
+write.csv(rbind(a, b), "data/meteo.csv", quote = FALSE, row.names = FALSE)
+```
+
