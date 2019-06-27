@@ -31,7 +31,7 @@ knitr::knit_hooks$set(margin = function(before, options, envir) {
 })
 
 knitr::opts_chunk$set(margin = TRUE, prompt = FALSE, comment = "##", eval = FALSE,
-                      collapse = FALSE, cache = FALSE, autodep = TRUE,
+                      collapse = FALSE, cache = FALSE, autodep = TRUE, message = FALSE,
                       dev.args = list(pointsize = 11), fig.height = 3.5,
                       fig.width = 4.24725, fig.retina = 2, fig.align = "center")
 
@@ -49,6 +49,73 @@ for(i in tdet) detach(i, unload = TRUE, character.only = TRUE)
 
 rm(list = ls())
 ```
+
+## Packages
+
+```{r eval = TRUE}
+library(dplyr)
+library(sf)
+library(purrr)
+library(magrittr)
+library(lubridate)
+library(tidyr)
+```
+
+## Selecting the climatic stations
+
+Downloading the polygons of the provinces of Lao PDR from
+[GADM](https://gadm.org/index.html):
+
+```{r eval = TRUE}
+if (!dir.exists("data-raw")) dir.create("data-raw")
+file <- "data-raw/gadm36_LAO_1_sf.rds"
+if (!file.exists(file))
+  download.file("https://biogeo.ucdavis.edu/data/gadm3.6/Rsf/gadm36_LAO_1_sf.rds", file)
+```
+
+Loading the polygons of the provinces of Lao PDR:
+
+```{r eval = TRUE}
+laos <- readRDS("data-raw/gadm36_LAO_1_sf.rds")
+```
+
+Loading the climatic stations:
+
+```{r eval = TRUE}
+stations <- readxl::read_excel("/Users/choisy/Dropbox/aaa/R_packages/tutiempo/data-raw/climatic stations.xlsx")
+```
+
+Transforming the data frame into an `sf` object:
+
+```{r eval = TRUE}
+stations_sf <- stations %>% 
+  select(-elevation, -from) %>% 
+  na.exclude() %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+```
+
+plotting:
+
+```{r eval = TRUE}
+plot(st_geometry(laos))
+plot(st_geometry(stations_sf), add = TRUE)
+axis(1)
+axis(2)
+abline(h = 17.5)
+abline(h = 18.5)
+abline(v = 102)
+abline(v = 104)
+```
+
+Filtering:
+
+```{r}
+selected_stations <- stations %>% 
+  filter(102 < longitude, longitude < 104, 17.5 < latitude, latitude < 18.5) %>% 
+  select(-from)
+```
+
+## Downloading the data
 
 The website [TuTiempo.net](https://en.tutiempo.net) contains meteorological and
 climatic data from many climatic stations around the world. Here we download all
@@ -150,17 +217,46 @@ download_data <- function(station, years, months = 1:12, error = "HTTP error 404
 }
 ```
 
-Downloading the data:
+The following funtion trim errors from a list return from a safe call:
 
 ```{r}
-a <- download_data(489400, 2010:2018, months = 1:12, error = "HTTP error 404")
-b <- download_data(489400, 2019, months = 1:5, error = "HTTP error 404")
+trim_errors <- function(x) {
+  lapply(x[which(sapply(x, function(y) is.null(y$error)))], function(y) y$result)
+}
 ```
 
-Writing to disk:
+This function `safely()` calls the above-defined `download_data()` on a dataframe
+of stations names, year and month values:
 
-```{r eval = FALSE, include = FALSE}
+```{r}
+make_meteo_data <- function(grid) {
+  setNames(with(grid, Map(safely(download_data), station, year, month)),
+           apply(grid, 1, paste, collapse = "-")) %>% 
+  trim_errors() %>% 
+  bind_rows(.id = "station") %>%
+  mutate(station = sub("-\\d*-\\d*$", "", station)) %>%
+  split(., .$station) %>% 
+  lapply(left_join, x = data.frame(day = seq(ymd("2010-01-01"), ymd("2019-05-31"), 1)), by = "day") %>% 
+  bind_rows() %>% 
+  select(station, day, everything()) %>% 
+  arrange(station, day)
+}
+```
+
+Downloading the data and writing them to disk:
+
+```{r}
 if (!dir.exists("data")) dir.create("data")
-write.csv(rbind(a, b), "data/meteo.csv", quote = FALSE, row.names = FALSE)
+bind_rows(expand.grid(selected_stations$station, 2010:2018, 1:12),
+          expand.grid(selected_stations$station, 2019,      1:5)) %>% 
+  setNames(c("station", "year", "month")) %>% 
+  make_meteo_data() %>% 
+  write.csv("data/meteo.csv", quote = FALSE, row.names = FALSE)
+```
+
+Writing the stations definitions to disk:
+
+```{r}
+write.csv(selected_stations, "data/stations.csv", quote = FALSE, row.names = FALSE)
 ```
 
