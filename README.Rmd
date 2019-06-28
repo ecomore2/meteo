@@ -17,20 +17,50 @@ knitr::opts_chunk$set(
 <!-- badges: start -->
 <!-- badges: end -->
 
-Source: [TuTiempo.net](https://en.tutiempo.net), daily data.
+Daily meteorological data were downloaded from [TuTiempo.net](https://en.tutiempo.net)
+for the following 4 climatic stations:
 
-Station: 489400 (VLVT) | Latitude: 17.95 | Longitude: 102.56 | Altitude: 171
+```{r echo = FALSE}
+(selected_stations <- read.csv("data/stations.csv"))
+```
 
-[cleaning pipeline](https://ecomore2.github.io/meteo/make_data.html)
+Which, on the map, are located here in red, from left to right and from top to
+bottom:
 
-[CSV](https://raw.githubusercontent.com/ecomore2/meteo/master/data/meteo.csv)
+```{r echo = FALSE, message = FALSE, fig.retina = 2, fig.align = "center"}
+library(sf)
+library(dplyr)
+laos <- readRDS("data-raw/gadm36_LAO_1_sf.rds")
+stations <- readxl::read_excel("/Users/choisy/Dropbox/aaa/R_packages/tutiempo/data-raw/climatic stations.xlsx")
+stations_sf <- stations %>% 
+  select(-elevation, -from) %>% 
+  na.exclude() %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+selected_stations <- selected_stations %>% 
+  select(-elevation) %>% 
+  na.exclude() %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+plot(st_geometry(laos))
+plot(st_geometry(stations_sf), add = TRUE)
+plot(st_geometry(selected_stations), col = "red", add = TRUE)
+```
 
-From R:
+After cleaning (see [cleaning pipeline](https://ecomore2.github.io/meteo/make_data.html)),
+the meteorological data as well and the climatic stations characteristics are
+available here:
 
-```{r}
+* [meteo.csv](https://raw.githubusercontent.com/ecomore2/meteo/master/data/meteo.csv) (905.5 KB)
+* [stations.csv](https://raw.githubusercontent.com/ecomore2/meteo/master/data/stations.csv) (211 K)
+
+From where they can be copied and pasted. They can also be downloaded directly
+from R as so:
+
+```{r eval = FALSE}
 if (! "readr" %in% rownames(installed.packages())) install.packages("readr")
-pacs <- readr::read_csv("https://raw.githubusercontent.com/ecomore2/meteo/master/data/meteo.csv",
-                        col_types = "Dddddidddddllll")
+meteo <- readr::read_csv("https://raw.githubusercontent.com/ecomore2/meteo/master/data/meteo.csv",
+                         col_types = "iDddddiddddllll")
+stations <- readr::read_csv("https://raw.githubusercontent.com/ecomore2/meteo/master/data/stations.csv",
+                            col_types = "cciddi")
 ```
 
 Dictionary:
@@ -45,8 +75,25 @@ Dictionary:
 * **vv**: average visibility (km)
 * **v**: average wind speed (km / h)
 * **vm**: maximum sustained wind speed (km / h)
-* **vg**: maximum speed of wind (km / h)
 * **ra**: boolean indicating whether there was rain or drizzle
 * **sn**: boolean indicating whether it snowed
 * **ts**: boolean indicating whether there were storm
-* **fg**: boolean indicating whether there was flood
+* **fg**: boolean indicating whether there was floo
+
+Below is a visual representation of the data per station:
+
+```{r echo = FALSE, message = FALSE, fig.retina = 2, fig.align = "center"}
+library(visdat)
+meteo <- readr::read_csv("data/meteo.csv", col_types = "iDddddiddddllll")
+# for(i in unique(meteo$station)) vis_dat(meteo[meteo$station == i, ])
+sta <- unique(meteo$station)
+print(sta[1])
+vis_dat(meteo[meteo$station == sta[1], ], FALSE)
+print(sta[2])
+vis_dat(meteo[meteo$station == sta[2], ], FALSE)
+print(sta[3])
+vis_dat(meteo[meteo$station == sta[3], ], FALSE)
+print(sta[4])
+vis_dat(meteo[meteo$station == sta[4], ], FALSE)
+```
+
