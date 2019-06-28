@@ -536,8 +536,10 @@ abline(v = 104)</code></pre>
   split(., .$station) %&gt;% 
   lapply(left_join, x = data.frame(day = seq(ymd(&quot;2010-01-01&quot;), ymd(&quot;2019-05-31&quot;), 1)), by = &quot;day&quot;) %&gt;% 
   bind_rows() %&gt;% 
-  select(station, day, everything()) %&gt;% 
-  arrange(station, day)
+  mutate_at(station, as.integer) %&gt;% 
+  select(station, day, everything(), vg) %&gt;% 
+  arrange(station, day) %&gt;% 
+  filter(! is.na(station)) %&gt;% 
 }</code></pre>
 <p>Downloading the data and writing them to disk:</p>
 <pre class="r"><code>if (!dir.exists(&quot;data&quot;)) dir.create(&quot;data&quot;)

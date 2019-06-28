@@ -238,8 +238,10 @@ make_meteo_data <- function(grid) {
   split(., .$station) %>% 
   lapply(left_join, x = data.frame(day = seq(ymd("2010-01-01"), ymd("2019-05-31"), 1)), by = "day") %>% 
   bind_rows() %>% 
-  select(station, day, everything()) %>% 
-  arrange(station, day)
+  mutate_at(station, as.integer) %>% 
+  select(station, day, everything(), vg) %>% 
+  arrange(station, day) %>% 
+  filter(! is.na(station)) %>% 
 }
 ```
 
